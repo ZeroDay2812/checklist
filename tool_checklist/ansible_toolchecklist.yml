@@ -1,0 +1,117 @@
+---
+- name: Clear file checklist OS server
+  hosts: localhost
+  gather_facts: no
+  become: no
+  tasks:
+    - name: Remove file
+      file:
+        path: ansible_toolchecklist.xlsx
+        state: absent
+
+- name: Check compute
+  hosts: host_toolchecklist
+  gather_facts: yes
+  become: yes
+  serial: 1
+  tasks:
+    - name: Hostname
+      shell: cat /etc/hostname
+      register: hostname
+
+    - name: Logical volume
+      shell: /sbin/lvs --noheadings
+      register: logical_volume
+      become: yes
+
+    - name: capacity network interface
+      shell: cat /sys/class/net/bond0/speed
+      register: bond0
+
+    - name: Transmit Hash Policy
+      shell: cat /proc/net/bonding/bond1  | grep 'Transmit Hash Policy'| cut -d ":" -f 2 | cut -d " " -f 2
+      register: a1
+      ignore_errors: yes
+
+    - name: MII Polling Interval
+      shell: cat /proc/net/bonding/bond1  | grep 'MII Polling Interval'| cut -d ":" -f 2 | cut -d " " -f 2
+      register: b1
+      ignore_errors: yes
+
+    - name: capacity network interface
+      shell: cat /sys/class/net/bond1/speed
+      register: bond1
+      ignore_errors: yes
+
+
+    - name: Bonding mode
+      shell: cat /proc/net/bonding/bond1  | grep 'Bonding Mode'| cut -d ":" -f 2 | cut -d " " -f 3
+      register: bonding_mode1
+      ignore_errors: yes
+
+    - name: Check status iptables
+      shell: systemctl list-unit-files | grep iptables
+      register: check_ipables
+      become: yes
+
+    - name: Iptables
+      shell: /usr/sbin/iptables -S | wc -l
+      register: iptable
+      become: yes
+
+    - name: File iptables
+      shell: cat /etc/sysconfig/iptables | wc -l
+      register: iptable_config
+      become: yes
+      ignore_errors: yes
+
+    - name: Ip Manager
+      shell: ipmitool lan print  | grep "IP Address"|tail -n 1 | cut -d ":" -f 2 | awk '{print$1}'
+      register: IP_manager
+
+    - name: Product Name
+      shell: cat /sys/class/dmi/id/product_name
+      register: product_name
+
+    - name: Vendor Name
+      shell: cat /sys/class/dmi/id/board_vendor
+      register: vendor_name
+
+    - name: Bonding mode
+      shell: cat /proc/net/bonding/bond0  | grep 'Bonding Mode'| cut -d ":" -f 2 | cut -d " " -f 3
+      register: bonding_mode
+
+    - name: Transmit Hash Policy
+      shell: cat /proc/net/bonding/bond0  | grep 'Transmit Hash Policy'| cut -d ":" -f 2 | cut -d " " -f 2
+      register: a
+
+    - name: MII Polling Interval
+      shell: cat /proc/net/bonding/bond0  | grep 'MII Polling Interval'| cut -d ":" -f 2 | cut -d " " -f 2
+      register: b
+
+    - name: HBA state
+      shell: cat /sys/class/fc_host/host*/port_state
+      register: hba
+      ignore_errors: yes
+
+    - name: HBA speed
+      shell: cat /sys/class/fc_host/host*/speed
+      register: hba_speed
+      ignore_errors: yes
+
+    - wait_for:
+        host: "{{ item.host }}"
+        port: "{{ item.port }}"
+        timeout: "{{ item.timeout }}"
+      loop: "{{ connection_check }}"
+      when: connection_check is defined
+      ignore_errors: yes
+      register: connection
+
+    - save_excel:
+        fields: 'Hostname IP_OS Capacity BIOS_Date BIOS_Version OS_Distribution OS_Kernel Iptables_Status Number_Iptables_rules Number_Iptables_rules_in_file Bond0 Bond1 IP_Manager Product_Name Vendor_Name Logical_Volume HBA'
+        facts: "*{{hostname.stdout}}*{{ inventory_hostname }}*{{ ansible_processor_vcpus }}CPUs,{{ ansible_memtotal_mb }}MB*{{ ansible_bios_date }}*{{ ansible_bios_version }}*{{ ansible_distribution_version }}*{{ ansible_kernel }}*{{check_ipables.stdout}}*{{ iptable.stdout }}*'{{ iptable_config.stdout }}*{{ bond0.stdout }},{{ bonding_mode.stdout }},{{ a.stdout}},{{ b.stdout}}ms*{{ bond1.stdout }},{{ bonding_mode1.stdout }},{{ a1.stdout}},{{ b1.stdout}}ms*{{ IP_manager.stdout }}*{{ product_name.stdout }}*{{ vendor_name.stdout }}*{{logical_volume.stdout_lines}}*|{{hba.stdout_lines}};{{hba_speed.stdout_lines}}|*"
+        path: ansible_toolchecklist.xlsx
+      delegate_to: localhost
+      become: no
+
